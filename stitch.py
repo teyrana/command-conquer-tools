@@ -2,94 +2,118 @@
 
 # Standard Library Imports
 import argparse
+from collections import namedtuple
+from math import ceil, sqrt
+import os
 from pathlib import Path
 import sys
+from typing import List
+
+Rectangle = namedtuple("Rectange", ["height", "width"])
 
 # 3rd Party Imports
 import wand
 from wand.image import Image
 
 
-_stage_path = Path("data/stage/")
-
-_output_path = Path("output/terrain/desert")
-
-_write_path = Path("output/terrain/desert")
-
-# load some test paths:
-test_paths = [
-    "/mnt/d/project/cnctd/data/stage/B6.DES-0000.png",
-    "/mnt/d/project/cnctd/data/stage/B1.DES-0000.png",
-    "/mnt/d/project/cnctd/data/stage/B2.DES-0000.png",
-    "/mnt/d/project/cnctd/data/stage/B2.DES-0001.png",
-    "/mnt/d/project/cnctd/data/stage/B4.DES-0000.png",
-    "/mnt/d/project/cnctd/data/stage/B5.DES-0000.png",
-]
-
-
 # Constant For Command & Conque -- Tiberian Dawn
-_tile_height = 128
-_tile_width = 128
+_tile = Rectangle(height=128, width=128)
 
-# ================
-# DEBUG values:
-tilesheet_height = 2 * _tile_height
-tilesheet_width = 3 * _tile_height
-# DEBUG
+background_color = wand.color.Color("black")
 
-tilesheet = Image(width=tilesheet_width, height=tilesheet_height)
+_verbosity = 0
 
-# ================
-each_path = iter(test_paths)
-pixels_from_top = 0
-pixels_from_left = 0
-for row in range(2):
-    pixels_from_left = 0
-    for col in range(3):
-        curpath = next(each_path)
-        print(
-            f"        [{col},{row}]: @({pixels_from_top},{pixels_from_left}): {curpath}"
-        )
-        curimg = Image(filename=curpath)
-        tilesheet.composite(curimg, top=pixels_from_top, left=pixels_from_left)
+# =============================================================================================================
+def _gather_tiles(input_path: str, ext: str) -> List[str]:
+    if not os.path.exists(input_path):
+        return []
 
-        pixels_from_left += _tile_width
+    found = []
+    for file in os.listdir(input_path):
+        if file.endswith(ext):
+            if not file.endswith(f".stitched{ext}"):
+                found.append(os.path.join(input_path, file))
 
-    print(f"    << Finished Row: {row}")
-    pixels_from_top += _tile_height
+    return found
 
-print(f"::Finished Compositing Tiles.")
 
-tilesheet.save(filename="test.composite.exact.png")
+def _stitch_tiles(inputs, output_path):
+    tile_count_x = ceil(sqrt(len(inputs)))
+    tile_count_y = ceil(len(inputs) / tile_count_x)
+    print(f"    ::Canvas:size: {tile_count_x}x{tile_count_y}")
+
+    # just double-check my math :P
+    assert len(inputs) <= (tile_count_x * tile_count_y)
+
+    canvas_width = tile_count_x * _tile.width
+    canvas_height = tile_count_y * _tile.height
+
+    each_path = iter(inputs)
+    with Image(width=canvas_width, height=canvas_height, background=background_color) as canvas:
+        canvas.alpha_channel = True
+        print(f"    ::Canvas:size: {canvas.size}")
+        try:
+            for row in range(tile_count_y):
+                for col in range(tile_count_x):
+                    pixels_from_top = row * _tile.height
+                    pixels_from_left = col * _tile.width
+                    curpath = next(each_path)
+                    print(f"        [{col},{row}]: @({pixels_from_top},{pixels_from_left}): {curpath}")
+                    with Image(filename=curpath) as each_tile:
+                        canvas.composite(each_tile, top=pixels_from_top, left=pixels_from_left)
+
+                # print(f"    << Finished Row: {row}")
+
+            # print(f"::Finished Compositing Tiles.")
+        except StopIteration:
+            # just done with files, before filling the sheet. that's fine.
+            pass
+
+        # not (yet) necessary ?
+        # canvas.transparent_color(wand.color.Color('#FFF'))
+
+        canvas.save(filename=output_path)
+
+    return
 
 
 if "__main__" == __name__:
     parser = argparse.ArgumentParser(
         prog="extractor", description="extract certain files from game archive"
     )
-    parser.add_argument("-b", "--base-path")
-    parser.add_argument("-s", "--search-path")
-    parser.add_argument("-o", "--output-path")
+    parser.add_argument("-i", "--input-dir")
+    parser.add_argument("-o", "--output-dir")
+    parser.add_argument("-x", "--tile-height")
+    parser.add_argument("-y", "--tile-width")
+    # parser.add_argument("-x", "--canvas-height")
+    # parser.add_argument("-y", "--canvas-width")
+
     parser.add_argument("-v", "--verbose", action="count", default=0)
     args = parser.parse_args()
 
-    if args.base_path:
-        base_path = args.base_path
-    else:
-        base_path = Path(_base_path)
+    # =============================================
+    # default values
+    input_dir = Path("data/desert/object/village/")
 
-    if args.search_path:
-        search_path = args.search_path
-    else:
-        search_path = base_path.joinpath("TERRAIN", "DESERT")
+    if args.input_dir:
+        input_dir = args.input_dir
 
-    if args.output_path:
-        _output_path = args.output_path
-    else:
-        _output_path = Path("data/stage/")
+    output_dir = input_dir
+    if args.output_dir:
+        output_dir = args.output_dir
+    output_name = os.path.basename(output_dir)
+    output_path = Path(output_dir, f"{output_name}.stitched.png")
 
-    verbose = args.verbose
-    if 0 < verbose:
-        print(f"Starting at: {search_path}")
+    # if args.tile_height and args.tile_width:
+    #     _tile = Rectangle( width=int(args.tile_width), height=int(args.tile_height))
 
-    apply(search_path, filter=_dds_filter, action=action_dds_to_png, verbose=verbose)
+    _verbosity = args.verbose
+    if 0 < _verbosity:
+        print(f"==> Gathering Input")
+
+    input_paths = _gather_tiles(input_dir, ".png")
+
+    if input_paths:
+        if 0 < _verbosity:
+            print(f"==> Stiching tiles ...")
+        _stitch_tiles(input_paths, output_path)
