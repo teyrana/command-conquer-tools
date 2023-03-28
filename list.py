@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-
+import argparse
 from pathlib import Path
 import os
 import re
@@ -12,7 +12,7 @@ _wsl_base_path = Path('/mnt/d/project/cnctd/data/textures/textures_td_srgb/DATA/
 _win_base_path = Path('c:d\project\cnctd\data\textures\textures_td_srgb\DATA\ART\TEXTURES\SRGB\TIBERIAN_DAWN')
 _base_path = None
 
-_stage_path = Path("data/stage/")
+_output_path = None
 
 
 if os.path.exists(_wsl_base_path):
@@ -30,11 +30,11 @@ def action_print( name : str ):
     print(name)
 
 _png_filter = re.compile('.+\.png$')
+_tga_filter = re.compile('.+\.TGA$')
+_dds_filter = re.compile('.+\.DDS$')
 
 # Uses package:
 # https://docs.wand-py.org/en/0.6.11/
-_tga_filter = re.compile('.+\.TGA$')
-_dds_filter = re.compile('.+\.DDS$')
 def action_dds_to_png( name: str ):
     from_suffix = 'DDS'.upper()
     to_suffix = 'png'.lower()
@@ -42,7 +42,7 @@ def action_dds_to_png( name: str ):
         with Image(filename=name) as read_image:
             with read_image.clone() as write_image:
                 write_image.format = to_suffix
-                write_image_name = _stage_path.joinpath( Path(name).stem + '.' + to_suffix)
+                write_image_name = str(_output_path.joinpath( Path(name).stem + '.' + to_suffix))
                 print("<<<: " + write_image_name)
                 write_image.save(filename=write_image_name)
 
@@ -96,15 +96,32 @@ def apply( curpath: Path, filter: re.Pattern, action=None, **kwargs ):
 
 if "__main__" == __name__:
 
-    # base_path = Path(_base_path)
-    # search_path = base_path.joinpath('TERRAIN','DESERT')
+    parser = argparse.ArgumentParser(prog='extractor',
+                    description='extract certain files from game archive')
+    parser.add_argument('-b','--base-path')
+    parser.add_argument('-s', '--search-path')
+    parser.add_argument('-o','--output-path')
+    parser.add_argument('-v', '--verbose', action='count', default=0)
+    args = parser.parse_args()
+    
+    if args.base_path:
+        base_path = args.base_path
+    else:
+        base_path = Path(_base_path)
 
+    if args.search_path:
+        search_path = args.search_path
+    else:  
+        search_path = base_path.joinpath('TERRAIN','DESERT')
 
-    search_path = _stage_path
+    if args.output_path:
+        _output_path = args.output_path
+    else:  
+        _output_path = Path('data/stage/')
 
-    verbose = 2
+    verbose = args.verbose
     if 0 < verbose:
         print(f"Starting at: {search_path}")
 
-    apply( search_path, filter=_png_filter, action=action_none, verbose=verbose )
+    apply( search_path, filter=_dds_filter, action=action_dds_to_png, verbose=verbose )
 
