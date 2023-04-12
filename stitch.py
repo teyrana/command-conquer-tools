@@ -60,15 +60,31 @@ def _stitch_tiles(inputs: List[str], **kwargs ) -> Image:
     
     if tile_auto:
         # extract the file-basename-index-suffix:
-        offsets = set([ int(os.path.basename(s)[8:12]) for s in inputs ])
 
-        tile_count_x = ceil(sqrt(max(offsets)))
-        tile_count_y = ceil(tile_count / tile_count_x)
+        offsets = set([ int(os.path.basename(s).split('-')[1][0:4]) for s in inputs ])
+        max_offs = max(offsets)+1
+        print(f"    ::max-offset: {max_offs}")
+        tile_count_x = ceil(sqrt(max_offs))
+        tile_count_y = ceil(max_offs / tile_count_x)
         tile_count = tile_count_x * tile_count_y
         print(f"    ::Calculated count size: {tile_count_x}x{tile_count_y} => {tile_count} ")
 
-        indices = [ int(i) if i in offsets else None for i in range(max(offsets)+1) ]
-        indices += [None] *(tile_count - len(indices))
+        # pre-allocate a 2D array:
+        indices = [ [None for i in range(tile_count_x)] for j in range(tile_count_y) ]
+        at_index = 0
+        for j in range(tile_count_y):
+            for i in range(tile_count_x):
+                if at_index in offsets:
+                    indices[j][i] = at_index
+                at_index += 1
+
+        print(f"    ::reshaped ordering:...")
+        for row in indices:
+            sys.stderr.write(f"            ")
+            for index in row:
+                sys.stderr.write( f" {index},".ljust(6) )
+            sys.stderr.write("\n")
+        ## DEBUG
 
     elif tile_explicit:
         print(f"    ::tiles: using explicit tiles (DEBUG):")
@@ -107,15 +123,9 @@ def _stitch_tiles(inputs: List[str], **kwargs ) -> Image:
         tile_count_y = ceil(len(inputs) / tile_count_x)
 
     # just double-check my math :P
+    print(f"    ::Canvas: {len(inputs)} tiles => size: {tile_count_x}x{tile_count_y}")
     assert len(inputs) <= (tile_count_x * tile_count_y)
 
-    print(f"    ::Canvas: {len(inputs)} tiles => size: {tile_count_x}x{tile_count_y}")
-
-    # tile_max_width = max([ im.width for im in images ])
-    # tile_max_height = max([ im.height for im in images ])
-    # print(f"    ::tiles(max): {tile_max_width}x{tile_max_height}")
-
-    
     canvas_width = tile_count_x * tile_max_width
     canvas_height = tile_count_y * tile_max_height
     print(f"        => {canvas_width}x{canvas_height}")
@@ -134,14 +144,12 @@ def _stitch_tiles(inputs: List[str], **kwargs ) -> Image:
             pixels_from_left = 0
             i=0
             for each_index in row:
-                if each_index is None:
-                    continue
-
-                each_path = inputs[each_index]
-                # convert path to image:
-                with Image(filename=each_path) as each_image:
-                    print(f"        [{i:4d},{j:4d}]: @({pixels_from_left:4d},{pixels_from_top:4d}) += {each_image.size} (::{each_path})")
-                    canvas.composite(each_image, top=pixels_from_top, left=pixels_from_left)
+                if each_index is not None:
+                    each_path = inputs[each_index]
+                    # convert path to image:
+                    with Image(filename=each_path) as each_image:
+                        print(f"        [{i:4d},{j:4d}]: @({pixels_from_left:4d},{pixels_from_top:4d}) += {each_image.size} (::{each_path})")
+                        canvas.composite(each_image, top=pixels_from_top, left=pixels_from_left)
                 pixels_from_left += tile_max_width
                 i+=1
             # print(f"    << Finished Row: {row}")
